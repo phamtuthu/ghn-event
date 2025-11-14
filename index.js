@@ -177,49 +177,74 @@ app.post("/webhook", async (req, res) => {
 
     const chatId = msg.chat.id;
     const userId = msg.from.id;
-    const text = msg.text.replace("/", "").trim();
+
+    // ----- PARSE COMMAND CHUẨN -----
+    const rawText = msg.text || "";
+    // lấy token đầu tiên (trường hợp user gõ kèm nội dung: "/help abc")
+    const firstToken = rawText.split(" ")[0];
+
+    let command = firstToken;
+    if (command.startsWith("/")) {
+      command = command.slice(1);         // bỏ dấu /
+    }
+    // bỏ phần @goichotoi_bot nếu có
+    command = command.split("@")[0].toLowerCase(); // "help@goichotoi_bot" => "help"
+
+    // từ đây dùng biến `command` thay cho `text` cũ
+    // --------------------------------
+
+    // CHỐNG user spam
+    if (runningUsers.has(userId)) {
+      await send(chatId, "⛔ Lệnh trước đang chạy, vui lòng đợi hoàn tất!");
+      return res.sendStatus(200);
+    }
 
     // HELP
-    if (text === "help" || text === "start") {
+    if (command === "help" || command === "start") {
       await send(chatId, buildHelp(userId));
       return res.sendStatus(200);
     }
 
-    // SYSTEM COMMAND
-    if (SYSTEM_COMMANDS[text]) {
-      if (!canRun(userId, text)) {
-        await send(chatId, "⛔ Bạn không có quyền chạy lệnh này.");
-        return res.sendStatus(200);
-      }
+    const isSystem = SYSTEM_COMMANDS[command] ? true : false;
+    const isMember = MEMBERS[command] ? true : false;
 
-      await send(chatId, "⏳ Đang xử lý...");
-      await axios.get(SYSTEM_COMMANDS[text]);
-      await send(chatId, "✅ Hoàn tất!");
+    if (!isSystem && !isMember) {
+      await send(chatId, "⛔ Không hiểu lệnh. Gõ /help.");
       return res.sendStatus(200);
     }
 
-    // MEMBER COMMAND
-    if (MEMBERS[text]) {
-      if (!canRun(userId, text)) {
-        await send(chatId, "⛔ Bạn không có quyền chạy lệnh này.");
-        return res.sendStatus(200);
-      }
-
-      const envKey = MEMBERS[text].gasEnv;
-      await send(chatId, `⏳ Đang cập nhật cho *${MEMBERS[text].name}*...`);
-      await axios.get(process.env[envKey]);
-      await send(chatId, "✅ Hoàn tất!");
+    if (!canRun(userId, command)) {
+      await send(chatId, "⛔ Bạn không có quyền chạy lệnh này.");
       return res.sendStatus(200);
     }
 
-    await send(chatId, "⛔ Không hiểu lệnh. Gõ /help.");
-    return res.sendStatus(200);
+    runningUsers.add(userId);
+    await send(chatId, "⏳ Đang xử lý…");
+    res.sendStatus(200);
+
+    setTimeout(async () => {
+      try {
+        if (isSystem) {
+          await axios.get(SYSTEM_COMMANDS[command]);
+        } else if (isMember) {
+          const envKey = MEMBERS[command].gasEnv;
+          await axios.get(process.env[envKey]);
+        }
+        await send(chatId, "✅ Hoàn tất!");
+      } catch (err) {
+        console.error("GAS ERROR:", err);
+        await send(chatId, "❌ Lỗi xử lý GAS, thử lại sau!");
+      } finally {
+        runningUsers.delete(userId);
+      }
+    }, 10);
 
   } catch (err) {
     console.error("Webhook error:", err);
     return res.sendStatus(200);
   }
 });
+
 
 // ================================
 app.get("/", (req, res) => res.send("Bot Controller is running ✓"));
