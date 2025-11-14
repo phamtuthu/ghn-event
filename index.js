@@ -1,7 +1,7 @@
-import express from "express";
-import axios from "axios";
-import { COMMANDS } from "./commands.js";
-import { canRunCommand } from "./permissions.js";
+const express = require("express");
+const axios = require("axios");
+const { COMMANDS } = require("./commands.js");
+const { canRunCommand } = require("./permissions.js");
 
 const app = express();
 app.use(express.json());
@@ -9,19 +9,12 @@ app.use(express.json());
 const BOT_TOKEN = process.env.TELEGRAM_TOKEN;
 const TG_API = `https://api.telegram.org/bot${BOT_TOKEN}`;
 
-// --------------------------
-//  REGISTER COMMANDS
-// --------------------------
 async function registerCommands() {
   await axios.post(`${TG_API}/setMyCommands`, { commands: COMMANDS });
   console.log("✓ Telegram commands registered");
 }
 registerCommands();
 
-
-// --------------------------
-//  UTILITY: Gửi tin nhắn
-// --------------------------
 function send(chatId, text) {
   return axios.post(`${TG_API}/sendMessage`, {
     chat_id: chatId,
@@ -29,19 +22,12 @@ function send(chatId, text) {
   });
 }
 
-// --------------------------
-//  WORKER TASK
-// --------------------------
 async function runTask(chatId, url, notice = "⏳ Đang xử lý…") {
   await send(chatId, notice);
   await axios.get(url);
   await send(chatId, "✅ Hoàn tất!");
 }
 
-
-// --------------------------
-//       MAIN WEBHOOK
-// --------------------------
 app.post("/webhook", async (req, res) => {
   try {
     const msg = req.body.message;
@@ -51,7 +37,6 @@ app.post("/webhook", async (req, res) => {
     const text = msg.text?.trim().replace("/", "");
     const userId = msg.from.id;
 
-    // HELP MENU
     if (text === "help") {
       return send(chatId,
 `📌 *Menu chính*
@@ -68,14 +53,12 @@ app.post("/webhook", async (req, res) => {
 → Gõ / và chọn người`);
     }
 
-    // GAS MAP
     const GAS = {
       datanew: process.env.GAS_DATANEW_URL,
       dataold: process.env.GAS_DATAOLD_URL,
       updatenew: process.env.GAS_UPDATENEW_URL,
       updateold: process.env.GAS_UPDATEOLD_URL,
 
-      // nhân viên (auto map)
       "3089136": process.env.GAS_3089136_URL,
       "3110482": process.env.GAS_3110482_URL,
       "3041313": process.env.GAS_3041313_URL,
@@ -104,17 +87,14 @@ app.post("/webhook", async (req, res) => {
       "3114283": process.env.GAS_3114283_URL
     };
 
-    // nếu lệnh không tồn tại
     if (!GAS[text]) {
       return send(chatId, "⛔ Không hiểu lệnh, gõ /help để xem menu.");
     }
 
-    // CHECK PERMISSION
     if (!canRunCommand(userId, text)) {
       return send(chatId, "⛔ Bạn không có quyền chạy lệnh này.");
     }
 
-    // RUN TASK
     await runTask(chatId, GAS[text]);
     return res.sendStatus(200);
 
@@ -124,9 +104,7 @@ app.post("/webhook", async (req, res) => {
   }
 });
 
-// --------------------------
 app.get("/", (req, res) => res.send("Bot Controller Running ✓"));
-// --------------------------
 
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => console.log("BOT running on port", PORT));
