@@ -8,9 +8,10 @@ const BOT_TOKEN = process.env.TELEGRAM_TOKEN;
 const TG_API = `https://api.telegram.org/bot${BOT_TOKEN}`;
 
 app.get("/", (req, res) => {
-  res.send("Bot is running ✓");
+  res.send("Bot Controller is running ✓");
 });
 
+// Webhook URL: https://<railway-domain>/webhook
 app.post("/webhook", async (req, res) => {
   try {
     const msg = req.body.message;
@@ -39,10 +40,11 @@ app.post("/webhook", async (req, res) => {
       await send(chatId, "✅ Notification xong!");
     }
 
-    res.sendStatus(200);
+    return res.sendStatus(200);
+
   } catch (err) {
-    console.error(err);
-    res.sendStatus(200);
+    console.error("Webhook error:", err);
+    return res.sendStatus(200);
   }
 });
 
@@ -53,8 +55,5 @@ function send(chatId, text) {
   });
 }
 
-// 🚀 Khởi chạy server trên Railway
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, "0.0.0.0", () => {
-  console.log(`🚀 Server running at http://0.0.0.0:${PORT}/`);
-});
+const PORT = process.env.PORT || 8080;
+app.listen(PORT, () => console.log("BOT is running on port", PORT));
