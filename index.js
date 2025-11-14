@@ -10,7 +10,7 @@ const TELEGRAM_API = `https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`
 
 // MAP command → App Script URL
 const COMMANDS = {
-  "/import": process.env.GAS_IMPORT_URL,
+  "/importnew": process.env.GAS_IMPORT_URL_NEW,
   "/notinew": process.env.GAS_NOTINEW_URL
 };
 
@@ -40,7 +40,7 @@ app.post("/webhook", async (req, res) => {
 `🤖 *Bot Google Script Controller*
 
 Các lệnh hiện có:
-👉 /import — Import dữ liệu từ Google Sheets
+👉 /importnew — Import lead new dữ liệu từ Google Sheets
 👉 /notinew — Gửi thông báo Data New
 
 Chọn lệnh để chạy.`,
