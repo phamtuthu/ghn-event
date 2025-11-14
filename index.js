@@ -6,7 +6,7 @@ app.use(express.json());
 
 /* ENV
 --------------------------------------------- */
-const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
+const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_TOKEN;
 const TELEGRAM_API = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}`;
 
 /* ROOT CHECK (Railway health-check)
