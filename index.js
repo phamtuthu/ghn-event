@@ -1,32 +1,39 @@
+// ================================================
+// GHN TELEGRAM BOT CONTROLLER (FINAL STABLE VERSION)
+// ================================================
+
 const express = require("express");
 const axios = require("axios");
 
 const app = express();
 app.use(express.json());
 
+// --------------------------------
+// TELEGRAM CONFIG
+// --------------------------------
 const BOT_TOKEN = process.env.TELEGRAM_TOKEN;
 const TG_API = `https://api.telegram.org/bot${BOT_TOKEN}`;
 
-// ================================
-// 1. DANH SÁCH SUPER ADMIN
-// ================================
+// --------------------------------
+// 1. SUPER ADMIN (toàn quyền)
+// --------------------------------
 const SUPER_ADMINS = [
-  999999999     // ← THAY BẰNG TELEGRAM ID CỦA BẠN
+  673765921,
+  890886032// <-- thay bằng Telegram ID của bạn
 ];
 
-// ================================
+// --------------------------------
 // 2. TEAM LEAD MAPPING
-// ================================
-// format: userId: teamNumber
+// --------------------------------
 const TEAM_LEADS = {
-  111111111: 1,  // Team 1 leader
-  222222222: 2,  // Team 2 leader
-  333333333: 3   // Team 3 leader
+  771974442: 1, // Team 1 leader
+  6087756568: 2, // Team 2 leader
+  677156507: 3  // Team 3 leader
 };
 
-// ================================
-// 3. MAP LỆNH → TEAM SỞ HỮU
-// ================================
+// --------------------------------
+// 3. LỆNH → TEAM QUẢN LÝ
+// --------------------------------
 const TEAM_COMMAND_MAP = {
   // TEAM 1
   "3089136": 1,
@@ -59,77 +66,38 @@ const TEAM_COMMAND_MAP = {
   "3114283": 3
 };
 
-// ================================
-// 4. CHECK PERMISSION
-// ================================
+// --------------------------------
+// 4. PERMISSION CHECK
+// --------------------------------
 function canRunCommand(userId, command) {
-
-  // Super admin → luôn pass
   if (SUPER_ADMINS.includes(userId)) return true;
-
-  // Lệnh không thuộc team → ai cũng chạy được
-  if (!TEAM_COMMAND_MAP[command]) return true;
-
+  if (!TEAM_COMMAND_MAP[command]) return true;  
   const userTeam = TEAM_LEADS[userId];
   const commandTeam = TEAM_COMMAND_MAP[command];
-
-  // Không phải team lead → không có quyền
   if (!userTeam) return false;
-
   return userTeam === commandTeam;
 }
 
-// ================================
-// 5. AUTO REGISTER COMMANDS
-// ================================
-const COMMANDS = [
-  { command: "help", description: "Hiện menu trợ giúp" },
+// --------------------------------
+// 5. RUNNING LOCK – chống chạy trùng
+// --------------------------------
+const runningTasks = {};
 
-  { command: "datanew", description: "Báo cáo data sáng" },
-  { command: "dataold", description: "Báo cáo data chiều" },
+function isRunning(cmd) {
+  return runningTasks[cmd] === true;
+}
 
-  { command: "updatenew", description: "Update data New" },
-  { command: "updateold", description: "Update data Old" },
+function setRunning(cmd) {
+  runningTasks[cmd] = true;
+}
 
-  // team 1
-  { command: "3089136", description: "Phan Thanh Cường – Team 1" },
-  { command: "3110482", description: "Trần Thị Thu Mai – Team 1" },
-  { command: "3041313", description: "Đỗ Ngọc Trâm – Team 1" },
-  { command: "3089135", description: "Bùi Vĩnh Nguyên – Team 1" },
-  { command: "3125832", description: "Nguyễn Thị Anh – Team 1" },
-  { command: "3097094", description: "Lê Thị Vỹ Trinh – Team 1" },
-  { command: "3063800", description: "Nguyễn Thanh Tú – Team 1" },
-  { command: "3113236", description: "Phan Thị Đào – Team 1" },
-  { command: "3125839", description: "Nguyễn Hùng Thuận – Team 1" },
+function clearRunning(cmd) {
+  delete runningTasks[cmd];
+}
 
-  // team 2
-  { command: "3053079", description: "Ngô Thuỳ Dương – Team 2" },
-  { command: "3061430", description: "Lê Anh Tuấn – Team 2" },
-  { command: "3115063", description: "Hồ Lam Nhiên – Team 2" },
-  { command: "3070887", description: "Lư Đức Hiển – Team 2" },
-  { command: "3108527", description: "Hà Sâm Minh – Team 2" },
-  { command: "3134239", description: "Nguyễn Hoàng Yến – Team 2" },
-  { command: "3111106", description: "Huỳnh Võ Anh Thư – Team 2" },
-  { command: "3097092", description: "Ngô Tuấn Kiệt – Team 2" },
-
-  // team 3
-  { command: "3100229", description: "Lê Quốc Quân – Team 3" },
-  { command: "3066803", description: "Phan Nguyễn Diệu An – Team 3" },
-  { command: "3114284", description: "Nguyễn Lâm Trường – Team 3" },
-  { command: "3100526", description: "Đoàn Thị Trinh – Team 3" },
-  { command: "3065006", description: "Trần Thị Hằng – Team 3" },
-  { command: "3101076", description: "Lê Phạm Quỳnh Như – Team 3" },
-  { command: "3114283", description: "Bạch Tuấn Anh – Team 3" },
-];
-
-// Đăng ký menu vào Telegram
-axios.post(`${TG_API}/setMyCommands`, { commands: COMMANDS })
-  .then(() => console.log("✓ Commands registered"))
-  .catch(err => console.error("Command register error:", err.message));
-
-// ================================
+// --------------------------------
 // 6. GỬI TIN NHẮN TELEGRAM
-// ================================
+// --------------------------------
 function send(chatId, text) {
   return axios.post(`${TG_API}/sendMessage`, {
     chat_id: chatId,
@@ -137,9 +105,104 @@ function send(chatId, text) {
   });
 }
 
-// ================================
-// 7. WEBHOOK
-// ================================
+// --------------------------------
+// 7. HELP MENU (HIỂN THỊ ĐẸP)
+// --------------------------------
+const HELP_MESSAGE =
+`📌 *Menu lệnh bot GHN Data*  
+_(Chỉ trưởng team mới chạy được lệnh cập nhật theo nhân viên)_
+
+====================
+1️⃣ *Báo cáo số lượng data*
+====================
+/datanew - Data buổi sáng  
+/dataold - Data buổi chiều  
+
+====================
+2️⃣ *Cập nhật data*
+====================
+/updatenew - Update Data New  
+/updateold - Update Data Old  
+
+====================
+3️⃣ *Cập nhật theo nhân viên*
+====================
+
+*Team 1*
+/3089136 - Phan Thanh Cường  
+/3110482 - Trần Thị Thu Mai  
+/3041313 - Đỗ Ngọc Trâm  
+/3089135 - Bùi Vĩnh Nguyên  
+/3125832 - Nguyễn Thị Anh  
+/3097094 - Lê Thị Vỹ Trinh  
+/3063800 - Nguyễn Thanh Tú  
+/3113236 - Phan Thị Đào  
+/3125839 - Nguyễn Hùng Thuận  
+
+*Team 2*
+/3053079 - Ngô Thuỳ Dương  
+/3061430 - Lê Anh Tuấn  
+/3115063 - Hồ Lam Nhiên  
+/3070887 - Lư Đức Hiển  
+/3108527 - Hà Sâm Minh  
+/3134239 - Nguyễn Hoàng Yến  
+/3111106 - Huỳnh Võ Anh Thư  
+/3097092 - Ngô Tuấn Kiệt  
+
+*Team 3*
+/3100229 - Lê Quốc Quân  
+/3066803 - Phan Nguyễn Diệu An  
+/3114284 - Nguyễn Lâm Trường  
+/3100526 - Đoàn Thị Trinh  
+/3065006 - Trần Thị Hằng  
+/3101076 - Lê Phạm Quỳnh Như  
+/3114283 - Bạch Tuấn Anh  
+`;
+
+// --------------------------------
+// 8. MAP LỆNH → GAS URL
+// (tất cả đặt trong ENV trên Railway)
+// --------------------------------
+const GAS = {
+  datanew: process.env.GAS_DATANEW_URL,
+  dataold: process.env.GAS_DATAOLD_URL,
+  updatenew: process.env.GAS_UPDATENEW_URL,
+  updateold: process.env.GAS_UPDATEOLD_URL,
+
+  // Team 1
+  "3089136": process.env.GAS_3089136_URL,
+  "3110482": process.env.GAS_3110482_URL,
+  "3041313": process.env.GAS_3041313_URL,
+  "3089135": process.env.GAS_3089135_URL,
+  "3125832": process.env.GAS_3125832_URL,
+  "3097094": process.env.GAS_3097094_URL,
+  "3063800": process.env.GAS_3063800_URL,
+  "3113236": process.env.GAS_3113236_URL,
+  "3125839": process.env.GAS_3125839_URL,
+
+  // Team 2
+  "3053079": process.env.GAS_3053079_URL,
+  "3061430": process.env.GAS_3061430_URL,
+  "3115063": process.env.GAS_3115063_URL,
+  "3070887": process.env.GAS_3070887_URL,
+  "3108527": process.env.GAS_3108527_URL,
+  "3134239": process.env.GAS_3134239_URL,
+  "3111106": process.env.GAS_3111106_URL,
+  "3097092": process.env.GAS_3097092_URL,
+
+  // Team 3
+  "3100229": process.env.GAS_3100229_URL,
+  "3066803": process.env.GAS_3066803_URL,
+  "3114284": process.env.GAS_3114284_URL,
+  "3100526": process.env.GAS_3100526_URL,
+  "3065006": process.env.GAS_3065006_URL,
+  "3101076": process.env.GAS_3101076_URL,
+  "3114283": process.env.GAS_3114283_URL
+};
+
+// --------------------------------
+// 9. TELEGRAM WEBHOOK
+// --------------------------------
 app.post("/webhook", async (req, res) => {
   try {
     const msg = req.body.message;
@@ -149,66 +212,51 @@ app.post("/webhook", async (req, res) => {
     const userId = msg.from.id;
     const text = msg.text.replace("/", "").trim();
 
-    // ===== HELP =====
+    // Trả về ngay để Telegram không retry
+    res.sendStatus(200);
+
+    // /help
     if (text === "help") {
-      await send(chatId,
-`📌 *Menu chính*
-
-1️⃣ Báo cáo số lượng data:
-/datanew – Sáng
-/dataold – Chiều
-
-2️⃣ Cập nhật data:
-/updatenew – Data New
-/updateold – Data Old
-
-3️⃣ Cập nhật từng nhân viên:
-→ Bấm / và chọn`);
-      return res.sendStatus(200);
+      return send(chatId, HELP_MESSAGE);
     }
 
-    // ================================
-    // MAP LỆNH → GAS URL
-    // ================================
-    const GAS = {
-      datanew: process.env.GAS_DATANEW_URL,
-      dataold: process.env.GAS_DATAOLD_URL,
-      updatenew: process.env.GAS_UPDATENEW_URL,
-      updateold: process.env.GAS_UPDATEOLD_URL,
-
-      // nhân viên
-      "3089136": process.env.GAS_3089136_URL,
-      "3110482": process.env.GAS_3110482_URL,
-      // ... (tất cả nhân viên còn lại)
-    };
-
+    // Command không tồn tại
     if (!GAS[text]) {
-      await send(chatId, "⛔ Không hiểu lệnh. Gõ /help.");
-      return res.sendStatus(200);
+      return send(chatId, "⛔ Lệnh không hợp lệ. Gõ /help để xem menu.");
     }
 
-    // ===== CHECK PERMISSION =====
+    // Check permission
     if (!canRunCommand(userId, text)) {
-      await send(chatId, "⛔ Bạn không có quyền chạy lệnh này.");
-      return res.sendStatus(200);
+      return send(chatId, "⛔ Bạn không có quyền chạy lệnh này.");
     }
 
-    // ===== RUN TASK =====
-    await send(chatId, "⏳ Đang xử lý…");
-    await axios.get(GAS[text]);
-    await send(chatId, "✅ Hoàn tất!");
+    // Check lock
+    if (isRunning(text)) {
+      return send(chatId, "⚠ Lệnh này đang chạy. Vui lòng đợi hoàn tất.");
+    }
 
-    return res.sendStatus(200);
+    // Set lock
+    setRunning(text);
+
+    await send(chatId, "⏳ Đang xử lý...");
+
+    // Gọi GAS
+    await axios.get(GAS[text]);
+
+    clearRunning(text);
+
+    await send(chatId, "✅ Hoàn tất!");
 
   } catch (err) {
     console.error("Webhook error:", err);
-    return res.sendStatus(200);
   }
 });
 
-// ================================
-app.get("/", (req, res) => res.send("Bot Controller is running ✓"));
-// ================================
+// --------------------------------
+app.get("/", (req, res) => {
+  res.send("GHN Bot Controller ✓ Running");
+});
+// --------------------------------
 
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => console.log("BOT is running on port", PORT));
