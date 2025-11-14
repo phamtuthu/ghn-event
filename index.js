@@ -1,5 +1,5 @@
-import express from "express";
-import axios from "axios";
+const express = require("express");
+const axios = require("axios");
 
 const app = express();
 app.use(express.json());
@@ -48,12 +48,12 @@ app.post("/webhook", async (req, res) => {
   }
 });
 
-async function send(chatId, text) {
+function send(chatId, text) {
   return axios.post(`${TG_API}/sendMessage`, {
     chat_id: chatId,
-    text: text,
+    text
   });
 }
 
 const PORT = process.env.PORT || 8080;
-app.listen(PORT, () => console.log("Bot running on port", PORT));
+app.listen(PORT, () => console.log("Bot running on", PORT));
