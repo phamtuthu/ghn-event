@@ -1,72 +1,70 @@
-import express from "express";
-import axios from "axios";
+const express = require("express");
+const axios = require("axios");
 
 const app = express();
 app.use(express.json());
 
-// ======= ENV VARIABLES =======
-const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN;
-const TELEGRAM_API = `https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`;
+/* ENV
+--------------------------------------------- */
+const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
+const TELEGRAM_API = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}`;
 
-const COMMANDS = {
-  "/importnew": process.env.GAS_IMPORT_URL_NEW,
-  "/notinew": process.env.GAS_NOTINEW_URL,
-};
+/* ROOT CHECK (Railway health-check)
+--------------------------------------------- */
+app.get("/", (req, res) => {
+  res.send("Bot is running ✓");
+});
 
+/* TELEGRAM WEBHOOK
+--------------------------------------------- */
 app.post("/webhook", async (req, res) => {
-  // Trả về ngay để Telegram không retry
-  res.status(200).send("OK");
-
   try {
     const msg = req.body.message;
-    if (!msg) return;
+    if (!msg || !msg.text) return res.sendStatus(200);
 
     const chatId = msg.chat.id;
-    const text = (msg.text || "").trim();
-
-    // Thông báo đang xử lý
-    await axios.post(TELEGRAM_API, {
-      chat_id: chatId,
-      text: "⏳ Đang xử lý...",
-    });
+    const text = msg.text.trim();
 
     if (text === "/start" || text === "/help") {
-      await axios.post(TELEGRAM_API, {
-        chat_id: chatId,
-        text:
-`🤖 *Bot Google Script Controller*
-
-Các lệnh hiện có:
-👉 /import — Import dữ liệu từ Google Sheets
-👉 /notinew — Gửi thông báo Data New`,
-        parse_mode: "Markdown",
-      });
-      return;
+      await sendMessage(chatId,
+        "🤖 Bot Menu\n\n" +
+        "👉 /import — Import dữ liệu từ Google Sheets\n" +
+        "👉 /notinew — Gửi thông báo Data New\n"
+      );
     }
 
-    if (!COMMANDS[text]) {
-      await axios.post(TELEGRAM_API, {
-        chat_id: chatId,
-        text: "❌ Lệnh không hợp lệ. Gõ /help để xem danh sách.",
-      });
-      return;
+    if (text === "/import") {
+      await sendMessage(chatId, "⏳ Đang chạy import...");
+      await axios.get(process.env.GAS_IMPORT_URL_NEW);
+      await sendMessage(chatId, "✅ Import xong!");
     }
 
-    const url = COMMANDS[text];
-    await axios.get(url);
+    if (text === "/notinew") {
+      await sendMessage(chatId, "⏳ Đang chạy thông báo...");
+      await axios.get(process.env.GAS_NOTINEW_URL);
+      await sendMessage(chatId, "✅ Đã gửi thông báo!");
+    }
 
-    await axios.post(TELEGRAM_API, {
-      chat_id: chatId,
-      text: `✅ Đã hoàn thành lệnh *${text}*`,
-      parse_mode: "Markdown",
-    });
-  } catch (err) {
-    console.error("Webhook error:", err.message);
+    return res.sendStatus(200);
+
+  } catch (e) {
+    console.error("Webhook error:", e);
+    return res.sendStatus(200);
   }
 });
 
-// QUAN TRỌNG: dùng PORT Railway cung cấp
-const PORT = process.env.PORT || 3000;
+/* SEND MESSAGE
+--------------------------------------------- */
+async function sendMessage(chatId, text) {
+  return axios.post(`${TELEGRAM_API}/sendMessage`, {
+    chat_id: chatId,
+    text: text
+  });
+}
+
+/* RAILWAY PORT
+--------------------------------------------- */
+const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => {
-  console.log(`Bot Controller running on port ${PORT}`);
+  console.log("Bot Controller running on port", PORT);
 });
