@@ -7,18 +7,23 @@ app.use(express.json());
 const BOT_TOKEN = process.env.TELEGRAM_TOKEN;
 const TG_API = `https://api.telegram.org/bot${BOT_TOKEN}`;
 
-// ================================
-// 1. SUPER ADMIN (ENV)
-// ================================
+// =====================================
+// 0. GLOBAL LOCK CHỐNG CHẠY TRÙNG
+// =====================================
+const runningUsers = new Set();   // userId -> đang chạy
+
+// =====================================
+// 1. SUPER ADMIN
+// =====================================
 function parseSuperAdmins() {
   if (!process.env.SUPER_ADMINS) return [];
   return process.env.SUPER_ADMINS.split(",").map(x => Number(x.trim()));
 }
 const SUPER_ADMINS = parseSuperAdmins();
 
-// ================================
-// 2. TEAM LEADS (ENV)
-// ================================
+// =====================================
+// 2. TEAM LEADS (userId : team)
+// =====================================
 function parseTeamLeads() {
   const out = {};
   if (!process.env.TEAM_LEADS) return out;
@@ -32,9 +37,10 @@ function parseTeamLeads() {
 }
 const TEAM_LEADS = parseTeamLeads();
 
-// ================================
-// 3. MEMBERS (ENV)
-// ================================
+// =====================================
+// 3. MEMBERS (tất cả mã nhân viên)
+// format: CODE:FULLNAME:TEAM:GAS_ENV_KEY
+// =====================================
 function parseMembers() {
   const out = {};
 
@@ -56,42 +62,41 @@ function parseMembers() {
 }
 const MEMBERS = parseMembers();
 
-// ================================
-// 4. SYSTEM COMMANDS (ENV)
-// ================================
+// =====================================
+// 4. SYSTEM COMMANDS
+// =====================================
 const SYSTEM_COMMANDS = {
   datanew: process.env.GAS_DATANEW_URL,
   dataold: process.env.GAS_DATAOLD_URL,
   updatenew: process.env.GAS_UPDATENEW_URL,
-  updateold: process.env.GAS_UPDATEOLD_URL,
+  updateold: process.env.GAS_UPDATEOLD_URL
 };
 
-// ================================
+// =====================================
 // 5. PERMISSION CHECK
-// ================================
+// =====================================
 function canRun(userId, command) {
 
-  // Super Admin → full quyền
+  // SUPER ADMIN = full quyền
   if (SUPER_ADMINS.includes(userId)) return true;
 
-  // Lệnh hệ thống → ai cũng chạy
+  // SYSTEM COMMAND = ai cũng chạy
   if (SYSTEM_COMMANDS[command]) return true;
 
-  // Không phải lệnh nhân viên → ai cũng chạy
+  // nếu không phải mã nhân viên
   if (!MEMBERS[command]) return true;
 
-  const memberTeam = MEMBERS[command].team;
+  // cần phải là leader
   const userTeam = TEAM_LEADS[userId];
-
-  // Không phải leader → không có quyền
   if (!userTeam) return false;
 
+  const memberTeam = MEMBERS[command].team;
   return userTeam === memberTeam;
 }
 
-// ================================
+// =====================================
 // 6. PRINT TEAM
-// ================================
+// =====================================
 function printTeam(teamNumber) {
   let out = `*Team ${teamNumber}*\n`;
 
@@ -104,9 +109,9 @@ function printTeam(teamNumber) {
   return out + "\n";
 }
 
-// ================================
-// 7. HELP MENU THEO QUYỀN
-// ================================
+// =====================================
+// 7. BUILD HELP
+// =====================================
 function buildHelp(userId) {
   const isSuper = SUPER_ADMINS.includes(userId);
   const teamLead = TEAM_LEADS[userId] || null;
@@ -131,7 +136,7 @@ function buildHelp(userId) {
     text += `3️⃣ *Cập nhật theo nhân viên*\n`;
     text += `====================\n\n`;
 
-    const allTeams = [...new Set(Object.values(MEMBERS).map(m => m.team))];
+    const allTeams = [...new Set(Object.values(MEMBERS).map(x => x.team))];
     allTeams.forEach(team => text += printTeam(team));
 
     return text;
@@ -143,11 +148,10 @@ function buildHelp(userId) {
     text += `3️⃣ *Cập nhật nhân viên Team ${teamLead}*\n`;
     text += `====================\n\n`;
     text += printTeam(teamLead);
-
     return text;
   }
 
-  // Nhân viên → không có quyền xem
+  // Nhân viên thường = không thấy danh sách
   text += `====================\n`;
   text += `3️⃣ *Cập nhật theo nhân viên*\n`;
   text += `====================\n`;
@@ -156,9 +160,9 @@ function buildHelp(userId) {
   return text;
 }
 
-// ================================
-// 8. TELEGRAM SEND
-// ================================
+// =====================================
+// 8. SEND TELEGRAM
+// =====================================
 function send(chatId, text) {
   return axios.post(`${TG_API}/sendMessage`, {
     chat_id: chatId,
@@ -167,9 +171,9 @@ function send(chatId, text) {
   });
 }
 
-// ================================
-// 9. WEBHOOK
-// ================================
+// =====================================
+// 9. WEBHOOK (CHỐNG CHẠY TRÙNG)
+// =====================================
 app.post("/webhook", async (req, res) => {
   try {
     const msg = req.body.message;
@@ -177,65 +181,57 @@ app.post("/webhook", async (req, res) => {
 
     const chatId = msg.chat.id;
     const userId = msg.from.id;
+    const text = msg.text.replace("/", "").trim();
 
-    // ----- PARSE COMMAND CHUẨN -----
-    const rawText = msg.text || "";
-    // lấy token đầu tiên (trường hợp user gõ kèm nội dung: "/help abc")
-    const firstToken = rawText.split(" ")[0];
-
-    let command = firstToken;
-    if (command.startsWith("/")) {
-      command = command.slice(1);         // bỏ dấu /
-    }
-    // bỏ phần @goichotoi_bot nếu có
-    command = command.split("@")[0].toLowerCase(); // "help@goichotoi_bot" => "help"
-
-    // từ đây dùng biến `command` thay cho `text` cũ
-    // --------------------------------
-
-    // CHỐNG user spam
+    // CHỐNG người dùng chạy lệnh liên tục
     if (runningUsers.has(userId)) {
       await send(chatId, "⛔ Lệnh trước đang chạy, vui lòng đợi hoàn tất!");
       return res.sendStatus(200);
     }
 
     // HELP
-    if (command === "help" || command === "start") {
+    if (text === "help" || text === "start") {
       await send(chatId, buildHelp(userId));
       return res.sendStatus(200);
     }
 
-    const isSystem = SYSTEM_COMMANDS[command] ? true : false;
-    const isMember = MEMBERS[command] ? true : false;
+    // Xác định command thuộc hệ thống hay nhân viên
+    const isSystem = SYSTEM_COMMANDS[text] ? true : false;
+    const isMember = MEMBERS[text] ? true : false;
 
     if (!isSystem && !isMember) {
       await send(chatId, "⛔ Không hiểu lệnh. Gõ /help.");
       return res.sendStatus(200);
     }
 
-    if (!canRun(userId, command)) {
+    // CHECK QUYỀN
+    if (!canRun(userId, text)) {
       await send(chatId, "⛔ Bạn không có quyền chạy lệnh này.");
       return res.sendStatus(200);
     }
 
-    runningUsers.add(userId);
-    await send(chatId, "⏳ Đang xử lý…");
-    res.sendStatus(200);
+    runningUsers.add(userId); // BẮT ĐẦU LOCK
 
+    // Gửi trước để Telegram KHÔNG retry
+    await send(chatId, "⏳ Đang xử lý…");
+
+    res.sendStatus(200); // TRẢ VỀ NGAY – TRÁNH TELEGRAM RETRY
+
+    // XỬ LÝ BACKGROUND (Non-blocking)
     setTimeout(async () => {
       try {
         if (isSystem) {
-          await axios.get(SYSTEM_COMMANDS[command]);
+          await axios.get(SYSTEM_COMMANDS[text]);
         } else if (isMember) {
-          const envKey = MEMBERS[command].gasEnv;
+          const envKey = MEMBERS[text].gasEnv;
           await axios.get(process.env[envKey]);
         }
         await send(chatId, "✅ Hoàn tất!");
       } catch (err) {
-        console.error("GAS ERROR:", err);
         await send(chatId, "❌ Lỗi xử lý GAS, thử lại sau!");
+        console.error("GAS ERROR:", err);
       } finally {
-        runningUsers.delete(userId);
+        runningUsers.delete(userId);  // MỞ LOCK
       }
     }, 10);
 
@@ -245,10 +241,9 @@ app.post("/webhook", async (req, res) => {
   }
 });
 
-
-// ================================
+// =====================================
 app.get("/", (req, res) => res.send("Bot Controller is running ✓"));
-// ================================
+// =====================================
 
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => console.log("BOT is running on port", PORT));
